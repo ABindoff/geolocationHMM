@@ -14,4 +14,7 @@ This repository holds important data for my thesis and a paper which is to be su
 
 *R Markdown files:*<br>
 **twilight free algorithm example ses**   R markdown document which will download the data sets and produce a track from the noisy
-                          light data, then compare the accuracy and precision of GLS-derived locations against GPS-derived locations.<br>
+                          light data, then compare the accuracy and precision of GLS-derived locations against GPS-derived locations. Download and open in R studio.<br>
+                          
+*Other files:*<br>
+**twilight_free_algorithm_example_ses.md**  shows the output from the R markdown without plots
