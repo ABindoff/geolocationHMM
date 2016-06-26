@@ -1,0 +1,296 @@
+---
+title: "Example of Twilight Free Method - southern elephant seal dataset"
+author: "Aidan Bindoff"
+date: "26 June 2016"
+output: html_document
+---
+
+This is a worked example of the *twilight free algorithm* described in Chapter 2 of my Honours thesis and a paper that has been submitted describing the method in detail. Data are from a southern elephant seal that was double-tagged with a time-depth recorder that also recorded ambient light and sea surface temperature (SST), and a GPS tag. The tags were deployed and retrieved at Isles Kerguelen.
+
+Instructions for installing SGAT and BAStag can be found at 
+https://github.com/ABindoff/SGAT
+https://github.com/SWotherspoon/BAStag
+
+
+```{r, warning = F}
+library(SGAT)
+library(BAStag)
+library(raster)
+library(maptools)
+library(ncdf)
+library(Metrics)
+library(readr)
+
+#  Main algorithm used to calculate the likelihoods
+TwilightFreeModel <- function(slices,
+                              alpha,beta,
+                              x0,fixed=FALSE,dt=NULL,threshold=5,zenith=96, spread = 2) {
+  
+  
+  time <- .POSIXct(sapply(slices,function(d) mean(d$Date)),"GMT")
+  
+  ## Times (hours) between observations
+  if(is.null(dt))
+    dt <- diff(as.numeric(time)/3600)
+  
+  
+  
+  ## Fixed locations
+  fixed <- rep_len(fixed,length.out=length(slices))
+  
+  ## Contribution to log posterior from each x location
+  logpk <- function(k,x) {
+    
+    n <- nrow(x)
+    logl <- double(n)
+    
+    ss <- solar(slices[[k]]$Date)
+    obsDay <- (slices[[k]]$Light) >= threshold
+    
+    ## Loop over location
+    for(i in seq_len(n)) {
+      
+      ## Compute for each x the time series of zeniths
+      expDay <- zenith(ss,x[i,1],x[i,2]) <= zenith
+      
+      ## Some comparison to the observed light -> is L=0 (ie logl=-Inf)
+      if(any(obsDay & !expDay)) {
+        logl[i] <- -Inf
+      } else {
+        count <- sum(expDay & !obsDay)
+        logl[i] <- dgamma(count,alpha[1],alpha[2],log=TRUE)
+      }
+    }
+    ## Return sum of likelihood + prior
+    logl + logp0(k,x, spread = spread)
+  }
+  
+  ## Behavioural contribution to the log posterior
+  logbk <- function(k,x1,x2) {
+    spd <- pmax.int(gcDist(x1,x2), 1e-06)/dt[k]
+    dgamma(spd,beta[1L],beta[2L],log=TRUE)
+  }
+  
+  list(
+    logpk=logpk,
+    logbk=logbk,
+    fixed=fixed,
+    x0=x0,
+    time=time,
+    alpha=alpha,
+    beta=beta)
+}
+
+
+logp0 <- function(k,x, spread = spread) {
+  x[,1] <- x[,1]%%360
+  tt <- median(d.seg[[k]]$Temp, na.rm = TRUE)    ## check again that this doesn't bugger up na.rm in next line
+  if(is.na(tt)) {
+    0
+  } else {
+    dnorm(tt,extract(sst[[indices[k]]],x),spread,log=T)
+  }
+}
+```
+
+
+Read in light data and filtered GPS locations for calibration and later comparison
+
+```{r, hold = T}
+#  TDR light, depth, SST previously resamples to 2 min intervals
+tag <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/TDR86372ds.csv"
+d.lig <- read_delim(tag, delim = ",", skip = 0, 
+                    col_names = c("Date", "Light","Depth","Temp"))
+head(d.lig)
+
+
+
+#  filtered GPS positions
+gps <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/86372_filteredGPS.csv"
+gdat <- read_csv(gps, skip = 0, 
+                   col_names = c("Date", "Lon","Lat"))
+head(gdat)
+```
+
+
+The original GLS tag data was not intended to produce location estimates and was not calibrated for this purpose. Instead, we will use the first 7 days GPS data to make an approximate calibration.
+
+```{r, hold = T}
+compare.light <- function(day, lon, lat, zenith = 96, offset = 0, verbose = T){
+  single.day <- subset(d.lig, d.lig$Date >= as.POSIXct(day, tz = "GMT")+offset*60*60 & d.lig$Date < as.POSIXct(day+24*60*60, tz = "GMT")+offset*60*60)
+  
+  d.sim <- zenithSimulate(single.day$Date, lon = rep(lon, length(single.day$Date)), lat = rep(lat, length(single.day$Date)), single.day$Date)
+  d.sim$Light0 <- ifelse(d.sim$Zenith<zenith,max(single.day$Light, na.rm = T),1)
+  d.sim$Light <- d.sim$Light0
+  thresh <- max(single.day$Light[which(d.sim$Zenith >= zenith)])
+  
+  if(verbose){
+    plot(single.day$Date, single.day$Light, col = "red",type = "l", lwd = 2, ylim = c(0,max(single.day$Light, na.rm = T)), xlab = day, main = cbind(lon, lat))
+    lines(d.sim$Date, d.sim$Light, lwd = 2)
+    abline( h = thresh, lty = 2)
+    print(paste0("max light in night window: ", thresh, " assuming a solar zenith angle of: ", zenith))
+  }
+  
+  return(thresh)
+}
+
+# calibrate on first 7 days GPS data
+thresh <- 5
+zen <- 97
+day <- as.POSIXct("2009-10-29 00:00:00", "UTC")
+
+for(i in 1:7){
+  dd <- day + i*60*60
+  med.lon <- median(subset(gdat$Lon, gdat$Date >= dd & gdat$Date <= dd+24*60*60), na.rm = T)
+  med.lat <- median(subset(gdat$Lat, gdat$Date >= dd & gdat$Date <= dd+24*60*60), na.rm = T)
+  
+  j <- compare.light(day+i*60*60, med.lon, med.lat, zenith = zen, offset = 5.5, verbose = F)
+  if(j > thresh){ 
+    thresh <- j
+  }
+}
+#thresh <- 129.2  zen <- 97
+```
+
+
+This plot shows how noisy the data are
+
+```{r, hold = T}
+#  figure showing the whole light record for the period chosen
+offset =5
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-28 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-20 15:00:01",tz = "UTC")) 
+lightImage(d.lig, offset = 5, zlim = c(0,130))
+```
+
+
+
+```{r, echo = F}
+#  the example in the paper does not use SST
+d.lig$Temp <- NA
+```
+
+
+Discretise the light data into 24 hour periods as per Methods
+
+```{r}
+## Define segment by date
+seg <- floor((as.numeric(d.lig$Date)- as.numeric(min(d.lig$Date)))/(24*60*60))
+## Split into segments
+d.seg <- split(d.lig,seg)
+## Drop first and last
+d.seg <- d.seg[-c(1,length(d.seg))]
+```
+
+
+```{r, echo = F}
+## SST
+#Incorporate a contribution to the likelihood that assumes
+#the observed sea surface temperature is Normally distributed about
+#remotely sensed SST.
+sst <- stack("C:/Reynolds/sst.wkmean.1990-present.nc",varname="sst",quick=TRUE)
+dmin <- c()
+for(i in 1:length(d.seg[])){
+  dmin[i] <- min(d.seg[[i]]$Date)
+}
+dmin <- strptime(as.POSIXct(dmin, "GMT", origin = "1970-01-01"), "%Y-%m-%d", "UTC")
+indices <- .bincode(as.POSIXct(dmin),as.POSIXct(strptime(getZ(sst),"%Y-%m-%d","UTC"),"UTC"),right=FALSE)
+```
+
+
+Discretise the spatial domain into a grid of cells. The example in the paper uses a 1/4x1/4 degree grid. In the interests of reduced processing time, use a 1x1 degree grid.
+
+```{r}
+# create the grid
+library(maptools)
+data("wrld_simpl")
+## Cells per degree, define Lat min and max (xmn, xmx) and Lon (ymn, ymx)
+## so that the example runs quickly, use a 1 x 1 degree grid instead of the
+## 1/4 x 1/4 grid used in the paper
+grid <- raster(nrows=30,ncols=70,
+               xmn=45,xmx=115, ymn=-65,ymx=-35,
+               crs=proj4string(wrld_simpl))
+
+grid <- rasterize(wrld_simpl,grid,1,silent=TRUE)
+## Mask must be non-zero for sea
+grid <- is.na(grid)
+
+
+burrow1 <- burrow2 <- c(70.75, -49.25)  #from med.lon, med.lat on start and end days
+
+## Make some initial track we only use the start and end points from
+x0 <- matrix(0,length(d.seg),2)
+x0[1,] <- burrow1; x0[length(d.seg), ] <- burrow2
+# if the starting point is defined by burrow, make the first entry 'T'
+# and if the animal returns to the burrow, make the last entry 'T' also
+fixed <- c(T,logical(length(d.seg)-2),T)
+```
+
+
+Calculate likelihoods and fit the model using the forward-backward algorithm described in the Methods.
+
+```{r}
+# define the parameters
+params <- c(1, 1/25, 1, 1/4, 1.0E-4)
+
+# specify the model
+model <- TwilightFreeModel(d.seg,
+                           alpha=c(params[1],params[2]),
+                           beta=c(params[3],params[4]),
+                           x0=x0, zenith = zen, threshold = thresh, fixed=fixed, spread = 2)
+
+
+# fit the model using the forward-backward algorithm, SGAT::essie
+fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = params[5])
+```
+
+
+Summarise daily locations for GPS and plot estimated tracks on a map
+
+```{r}
+##  function to plot GLS track over GPS track
+drawTracks <- function(lon1, lat1, lon2, lat2, col1 = "firebrick", col2 = "dodgerblue", main = ""){
+  xlm <- range(append(lon1, lon2))
+  ylm <- range(append(lat1, lat2))
+  
+  data(wrld_simpl)
+  plot(wrld_simpl,xlim=xlm,ylim=ylm,
+       col="grey90",border="grey80", main = main, axes = T)
+  
+  lines(cbind(lon1, lat1), col = col1)
+  lines(cbind(lon2, lat2), col = col2)
+}
+
+
+# summarise daily locations for GPS and plot both estimated tracks
+trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
+colnames(trip) <- c("Date", "Lon", "Lat")
+gdat$Day <- as.POSIXct(strptime(gdat$Date, "%Y-%m-%d"))
+seg <- floor((as.numeric(gdat$Day)- as.numeric(min(gdat$Day)))/(24*60*60))
+path <- aggregate(gdat[,c("Day","Lon","Lat")],list(Seg=seg),FUN=mean)
+j <- subset(trip, trip$Date %in% path$Day)
+k <- subset(path, path$Day %in% j$Date)
+drawTracks(j$Lon, jitter(j$Lat), k$Lon, k$Lat) # jitter to show more points
+```
+
+
+Compare the accuracy and precision of GLS-derived position estimates with the *nearest* GPS fix for each day (to account for some of the error due to movement).
+
+```{r, hold = T}
+# calculate RMSE of lon, lat using mean daily GPS locations
+rmse(trip$Lon, path$Lon)
+rmse(trip$Lat, path$Lat)
+
+# calculate gcDist to nearest GPS position on any day
+j <- c()
+for(i in 1:length(trip$Date)){
+  k <- subset(gdat, as.POSIXct(Day) == as.POSIXct(trip$Date[i]))
+  j[i] <- min(gcDist(cbind(trip$Lon[i], trip$Lat[i]), cbind(k$Lon, k$Lat)), na.rm = T)
+}
+
+mean(j)
+sd(j)
+
+# note: slightly different results were obtained in the paper because a different grid was used
+```
+
