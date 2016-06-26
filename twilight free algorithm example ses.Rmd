@@ -12,7 +12,7 @@ https://github.com/ABindoff/SGAT
 https://github.com/SWotherspoon/BAStag
 
 
-```{r, warning = F}
+```{r, warning = F, message = F}
 library(SGAT)
 library(BAStag)
 library(raster)
