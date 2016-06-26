@@ -10,7 +10,8 @@ This repository holds important data for my thesis and a paper which is to be su
 **86372_filteredGPS.csv**   filtered GPS positions from the southern elephant seal example<br>
 **TDR86372ds.csv**            resampled light data from the southern elephant seal example<br>
 **noisy_stsh.csv**            BAStag format simulated noisy light data for the short-tailed shearwater example<br>
-**perfect_stsh.csv**         BAStag format simulated perfect light data for the short-tailed shearwater example<br><br>
+**perfect_stsh.csv**         BAStag format simulated perfect light data for the short-tailed shearwater example<br>
+**018_WI_OCT2012estelleSST.csv**    track from SGAT which was the template for noisy_stsh and perfect_stsh<br><br>
 
 *R Markdown files:*<br>
 **twilight free algorithm example ses**   R markdown document which will download the data sets and produce a track from the noisy
