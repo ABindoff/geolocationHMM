@@ -84,7 +84,7 @@ TwilightFreeModel <- function(slices,
 
 logp0 <- function(k,x, spread = spread) {
   x[,1] <- x[,1]%%360
-  tt <- median(d.seg[[k]]$Temp, na.rm = TRUE)    ## check again that this doesn't bugger up na.rm in next line
+  tt <- median(d.seg[[k]]$Temp, na.rm = TRUE) 
   if(is.na(tt)) {
     0
   } else {
@@ -185,9 +185,7 @@ d.seg <- d.seg[-c(1,length(d.seg))]
 
 ```{r, echo = F}
 ## SST
-#Incorporate a contribution to the likelihood that assumes
-#the observed sea surface temperature is Normally distributed about
-#remotely sensed SST.
+#Incorporate a contribution to the likelihood
 sst <- stack("C:/Reynolds/sst.wkmean.1990-present.nc",varname="sst",quick=TRUE)
 dmin <- c()
 for(i in 1:length(d.seg[])){
