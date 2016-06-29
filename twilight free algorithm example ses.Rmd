@@ -7,17 +7,16 @@ output: html_document
 
 This is a worked example of the *twilight free algorithm* described in Chapter 2 of my Honours thesis and a paper that has been submitted describing the method in detail. Data are from a southern elephant seal that was double-tagged with a time-depth recorder that also recorded ambient light and sea surface temperature (SST), and a GPS tag. The tags were deployed and retrieved at Isles Kerguelen.
 
-Instructions for installing SGAT and BAStag can be found at 
-https://github.com/ABindoff/SGAT
-https://github.com/SWotherspoon/BAStag
-
+If you don't have SGAT or BAStag previously installed, then uncomment the first 3 lines of code to install these packages.
 
 ```{r, warning = F, message = F}
+# install.packages("devtools")
+# devtools::install_github("SWotherspoon/SGAT")
+# devtools::install_github("SWotherspoon/BAStag")
 library(SGAT)
 library(BAStag)
 library(raster)
 library(maptools)
-library(ncdf)
 library(Metrics)
 library(readr)
 
@@ -184,15 +183,8 @@ d.seg <- d.seg[-c(1,length(d.seg))]
 
 
 ```{r, echo = F}
-## SST
-#Incorporate a contribution to the likelihood
-sst <- stack("C:/Reynolds/sst.wkmean.1990-present.nc",varname="sst",quick=TRUE)
-dmin <- c()
-for(i in 1:length(d.seg[])){
-  dmin[i] <- min(d.seg[[i]]$Date)
-}
-dmin <- strptime(as.POSIXct(dmin, "GMT", origin = "1970-01-01"), "%Y-%m-%d", "UTC")
-indices <- .bincode(as.POSIXct(dmin),as.POSIXct(strptime(getZ(sst),"%Y-%m-%d","UTC"),"UTC"),right=FALSE)
+
+indices <- NA
 ```
 
 
