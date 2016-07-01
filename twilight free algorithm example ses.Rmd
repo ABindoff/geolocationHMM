@@ -268,8 +268,8 @@ Compare the accuracy and precision of GLS-derived position estimates with the *n
 ```{r, hold = T}
 # calculate RMSE of lon, lat using mean daily GPS locations
 n = length(trip$Lon)
-sqrt((1/n)*((trip$Lon-path$Lon)^2))
-sqrt((1/n)*((trip$Lat-path$Lat)^2))
+sqrt((1/n)*sum((trip$Lon-path$Lon)^2))
+sqrt((1/n)*sum((trip$Lat-path$Lat)^2))
 
 
 # calculate gcDist to nearest GPS position on any day
