@@ -187,7 +187,7 @@ indices <- NA
 ```
 
 
-Discretise the spatial domain into a grid of cells. The example in the paper uses a 1/4x1/4 degree grid. In the interests of reduced processing time, use a 1x1 degree grid.
+Discretise the spatial domain into a grid of cells. The example in the paper uses a 1/4x1/4 degree grid. In the interests of reduced processing time, use a 1x1 degree grid. (If you'd like to reproduce the example in the paper, use nrow = 120, ncol = 280).
 
 ```{r}
 # create the grid
