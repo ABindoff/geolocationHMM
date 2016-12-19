@@ -187,17 +187,16 @@ indices <- NA
 ```
 
 
-Discretise the spatial domain into a grid of cells. The example in the paper uses a 1/4x1/4 degree grid. In the interests of reduced processing time, use a 1x1 degree grid. (If you'd like to reproduce the example in the paper, use nrow = 120, ncol = 280).
+Discretise the spatial domain into a grid of cells. The example in the paper uses a 1/4x1/4 degree grid. In the interests of reduced processing time, use a 1x1 degree grid.
 
 ```{r}
 # create the grid
 library(maptools)
 data("wrld_simpl")
 ## Cells per degree, define Lat min and max (xmn, xmx) and Lon (ymn, ymx)
-## so that the example runs quickly, use a 1 x 1 degree grid instead of the
-## 1/4 x 1/4 grid used in the paper
-grid <- raster(nrows=30,ncols=70,
-               xmn=45,xmx=115, ymn=-65,ymx=-35,
+## adjust nrows, ncols to get a feel for the sensitivity at difference cell sizes
+grid <- raster(nrows = 30, ncols = 70,
+               xmn=45, xmx=115, ymn=-65, ymx=-35,
                crs=proj4string(wrld_simpl))
 
 grid <- rasterize(wrld_simpl,grid,1,silent=TRUE)
@@ -268,8 +267,8 @@ Compare the accuracy and precision of GLS-derived position estimates with the *n
 ```{r, hold = T}
 # calculate RMSE of lon, lat using mean daily GPS locations
 n = length(trip$Lon)
-sqrt((1/n)*sum((trip$Lon-path$Lon)^2))
-sqrt((1/n)*sum((trip$Lat-path$Lat)^2))
+round(sqrt((1/n)*sum((trip$Lon-path$Lon)^2)), 2)
+round(sqrt((1/n)*sum((trip$Lat-path$Lat)^2)), 2)
 
 
 # calculate gcDist to nearest GPS position on any day
@@ -282,6 +281,4 @@ for(i in 1:length(trip$Date)){
 mean(j)
 sd(j)
 
-# note: slightly different results were obtained in the paper because a different grid was used
 ```
-
