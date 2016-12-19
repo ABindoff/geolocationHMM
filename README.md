@@ -18,4 +18,4 @@ This repository holds important data for my thesis and a paper which is to be su
                           light data, then compare the accuracy and precision of GLS-derived locations against GPS-derived locations. Download and open in R studio.<br>
                           
 *Other files:*<br>
-**twilight_free_algorithm_example_ses.md**  shows the output from the R markdown without plots
+**twilight_free_algorithm_example_ses.html**  output file for the impatient
