@@ -1,0 +1,420 @@
+---
+title: "using_previously_determined_parameters"
+author: "Bindoff, A."
+date: "5 June 2017"
+output: html_document
+---
+
+
+### Testing previously determined parameters
+
+The twilight-free method of Bindoff et al. (2017) requires the user to determine shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Animal behaviour determines the optimal shading and movement parameters in the twilight-free method. Once an optimum for an animal is determined (say, through double-tagging experiment), the method is not particularly sensitive to relatively small changes in these parameters - but this doesn't answer the question of how sensitive the method is to actual changes in species' behaviour using the optimal parameters for an individual.
+
+To answer this important question of parameter sensitivity (and ecological validity), we obtained light and gps data from several southern elephant seals and determined the accuracy and precision of the reconstructed tracks using the optimal parameters determined using data from an individual animal.
+
+
+```{r libraries, warning = F, message = F, echo = F}
+#install.packages("devtools")
+#devtools::install_github("SWotherspoon/SGAT")
+#devtools::install_github("SWotherspoon/BAStag")  
+library(SGAT)
+library(BAStag)
+library(raster)
+library(maptools)
+library(readr)
+library(dplyr)
+```
+
+  
+
+
+```{r twilight_free_model, echo = F}
+#  core algorithm of the twilight free method of Bindoff et al.
+TwilightFree <- function(df,
+                         alpha = c(1, 1/10),
+                         beta = c(1, 1/4),
+                         dt = NULL,
+                         threshold = 5,
+                         zenith = 96,
+                         deployed.at = F,  # c(lon, lat)
+                         retrieved.at = F){# c(lon, lat))) 
+  # Define segment by date
+  seg <- floor((as.numeric(df$Date)- as.numeric(min(df$Date)))/(24*60*60))
+  # Split into `slices`
+  slices <- split(df,seg)
+  slices <- slices[-c(1,length(slices))]
+  
+  
+  # fixed locations
+  x0 <- matrix(0, length(slices), 2)
+  x0[1,] <- deployed.at
+  x0[length(slices),] <- retrieved.at
+  fixed <- rep_len(c(as.logical(deployed.at[1L]),
+                     logical(length(slices)-2),
+                     as.logical(retrieved.at[1L])),
+                     length.out = length(slices))
+  
+  time <- .POSIXct(sapply(slices,
+                            function(d) mean(d$Date)), "GMT")
+  
+  ## Times (hours) between observations
+  if (is.null(dt))
+    dt <- diff(as.numeric(time) / 3600)
+  
+  
+  ## Contribution to log posterior from each x location
+  logpk <- function(k, x) {
+    n <- nrow(x)
+    logl <- double(n)
+    
+    ss <- solar(slices[[k]]$Date)
+    obsDay <- (slices[[k]]$Light) >= threshold
+    
+    ## Loop over location
+    for (i in seq_len(n)) {
+      ## Compute for each x the time series of zeniths
+      expDay <- zenith(ss, x[i, 1], x[i, 2]) <= zenith
+      
+      ## Some comparison to the observed light -> is L=0 (ie logl=-Inf)
+      if (any(obsDay & !expDay)) {
+        logl[i] <- -Inf
+      } else {
+        count <- sum(expDay & !obsDay)
+        logl[i] <- dgamma(count, alpha[1], alpha[2], log = TRUE)
+      }
+    }
+    ## Return sum of likelihood + prior
+    logl + logp0(k, x, slices)
+  }
+  
+  ## Behavioural contribution to the log posterior
+  logbk <- function(k, x1, x2) {
+    spd <- pmax.int(gcDist(x1, x2), 1e-06) / dt[k]
+    dgamma(spd, beta[1L], beta[2L], log = TRUE)
+  }
+  
+  list(
+    logpk = logpk,
+    logbk = logbk,
+    fixed = fixed,
+    x0 = x0,
+    time = time,
+    alpha = alpha,
+    beta = beta
+  )
+}
+
+
+logp0 <- function(k, x, slices) {
+  x[, 1] <- x[, 1] %% 360
+  tt <- median(slices[[k]]$Temp, na.rm = TRUE)
+  if (is.na(tt)) {
+    0
+  } else {
+    dnorm(tt, extract(sst[[indices[k]]], x), 2, log = T)
+  }
+}
+```
+
+
+```{r threshold_using_calibrate, echo = F}
+# find a threshold using calibration position and date
+calibrate <- function(df, day, lon, lat, zenith = 96, offset = 0, verbose = T){
+  day <- day + offset*60*60  # `day` is a POSIXct date-time object usually in GMT so an `offset` parameter is provided 
+                             # to quickly shift the data so that the night isn't cut off 
+  single.day <- subset(df, df$Date >= as.POSIXct(day, tz = "GMT") & df$Date < as.POSIXct(day+24*60*60, tz = "GMT"))
+  
+  d.sim <- zenithSimulate(single.day$Date,
+                          lon = rep(lon, length(single.day$Date)),
+                          lat = rep(lat, length(single.day$Date)),
+                          single.day$Date)
+  d.sim$Light <- ifelse(d.sim$Zenith < zenith, max(single.day$Light, na.rm = T), 1)
+  thresh <- max(single.day$Light[which(d.sim$Zenith >= zenith)])
+  
+  if(verbose){
+    plot(single.day$Date,
+         single.day$Light,
+         col = "red",type = "l",
+         lwd = 2,
+         ylim = c(0,max(single.day$Light, na.rm = T)),
+         xlab = day, main = cbind(lon, lat))
+    lines(d.sim$Date, d.sim$Light, lwd = 2)
+    abline(h = thresh, lty = 2)
+    print(paste0("max light in night window: ", thresh, " assuming a solar zenith angle of: ", zenith))
+  }
+  
+  return(thresh)
+  
+}
+```
+
+
+
+```{r grid}
+# make a grid with a land/sea mask for the model
+make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask = "sea") {
+  data("wrld_simpl")
+  nrows <- abs(lat[2L] - lat[1L]) / cell.size
+  ncols <- abs(lon[2L] - lon[1L]) / cell.size
+  grid <- raster(
+    nrows = nrows,
+    ncols = ncols,
+    xmn = min(lon),
+    xmx = max(lon),
+    ymn = min(lat),
+    ymx = max(lat),
+    crs = proj4string(wrld_simpl)
+  )
+    grid <- rasterize(wrld_simpl, grid, 1, silent = TRUE)
+    grid <- is.na(grid)
+    switch(mask,
+           sea = {},
+           land = {
+                  grid <- subs(grid, data.frame(c(0,1), c(1,0)))},
+           none = {
+                  grid <- subs(grid, data.frame(c(0,1), c(1,1)))
+           }
+    )
+  return(grid)
+}
+
+grid <- make.grid(c(45, 115), c(-65, -35), cell.size = 1, mask = "sea")
+plot(grid)
+```
+
+```{r, hold = T}
+#  TDR light, depth, SST previously resampled to 2 min intervals
+tag <- "tdr86373.csv"
+d.lig <- read_csv(tag)
+d.lig$Temp <- NA
+
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-29 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-10 15:00:01",tz = "UTC")) 
+lightImage(d.lig, offset = 5, zlim = c(0,130))
+
+
+#  raw GPS positions
+gps <- "09-86373.GPS.raw.track.txt"
+gdat <- read_tsv(gps) %>% select(Name, Day, Time, Longitude, Latitude, Longitude)
+
+
+```
+  
+The plot above shows the time series. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. You can only just make out night in this plot because the seal spends so much time diving deeply, and the light sensor on this tag picks up moonlight quite easily.
+
+We select a zenith `zen <- 95` as a good starting point for finding a light threshold. We know (from GPS data in this case, but generally from field notes) that the tag was at 72.9, -49.1 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
+
+
+```{r calibrate95}
+zen <- 98
+day <- as.POSIXct("2009-10-31 00:00:00", "UTC")
+thresh <- calibrate(d.lig, day, 72.9, -49.1, zen) * 1.10
+```
+
+The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 95 degrees is indicated with a dashed line.
+
+We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
+
+```{r build_model}
+
+retrieved.at <- deployed.at <- c(70.7, -49.25)
+
+
+# specify the model
+model <- TwilightFree(d.lig,
+                      alpha=c(1, 1/25),
+                      beta=c(1, 1/5),
+                      zenith = zen, threshold = thresh, 
+                      deployed.at = deployed.at,
+                      retrieved.at = retrieved.at)
+```
+
+
+Now the forward-backward algorithm has everything it needs to fit the model - a model and a grid. A 90 day track takes less than a minute on most computers, `epsilon1` and `epsilon2` tell the algorithm which cells to exclude from the algorithm at each step (these are the very low likelihood locations given the data).
+
+```{r fit}
+# fit the model using the forward-backward algorithm, SGAT::essie
+fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6)
+```
+
+Let's have a look at the track - but first we need a function to turn the fitted object into a track, and another to plot it nicely.  
+`trip` takes the fitted object and returns a data frame with Date, Lon, Lat.  
+`drawTracks` takes the object returned from `trip` and plots it on a sensibly defined map.
+
+```{r trip}
+# return a track from an essie fit
+trip <- function(fit){
+  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
+  names(trip) <- c("Date", "Lon", "Lat")
+  return(trip)
+}
+
+colfunc<-colorRampPalette(c("red","springgreen","royalblue"))
+
+# plot track function
+drawTracks <- function(trip, col = "firebrick", main = ""){
+  xlm <- range(trip$Lon)
+  ylm <- range(trip$Lat)
+  
+  data(wrld_simpl)
+  plot(wrld_simpl,xlim=xlm,ylim=ylm,
+       col="grey90",border="grey80", main = main, axes = T)
+  
+  points(cbind(jitter(trip$Lon), jitter(trip$Lat)), col = colfunc(nrow(trip)))
+  lines(cbind(trip$Lon, trip$Lat), col = col)
+}
+
+
+track <- trip(fit)
+gdat$Day <- as.POSIXct(strptime(gdat$Day, "%d-%B-%Y"), tz = "UTC", "%Y-%m-%d")
+path <- na.omit(gdat[,c("Day", "Longitude", "Latitude")])
+path <- group_by(path, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+
+
+j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
+k <- filter(path, as.character(path$Day) %in% as.character(j$Date))
+
+drawTracks(track)
+lines(cbind(k$Lon, k$Lat), col = "dodgerblue")
+
+```
+
+```{r, hold = T}
+# calculate RMSE of lon, lat using mean daily GPS locations
+n = length(track$Lon)
+round(sqrt((1/n)*sum((track$Lon-k$Lon)^2)), 2)
+round(sqrt((1/n)*sum((track$Lat-k$Lat)^2)), 2)
+
+
+# calculate gcDist to nearest GPS position on any day
+j <- c()
+for(i in 1:length(track$Date)){
+  k <- subset(gdat, as.character(gdat$Day) %in% as.character(track$Date[i]))
+  j[i] <- min(gcDist(cbind(track$Lon[i], track$Lat[i]), cbind(k$Longitude, k$Latitude)), na.rm = T)
+}
+
+mean(j)
+sd(j)
+
+```
+
+### Repeat with another tag
+
+```{r, hold = T}
+#  TDR light, depth, SST previously resampled to 2 min intervals
+tag <- "tdr78524.csv"
+d.lig <- read_csv(tag)
+d.lig$Temp <- NA
+
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-19 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-03 15:00:01",tz = "UTC")) 
+lightImage(d.lig, offset = 5, zlim = c(0,130))
+
+
+#  raw GPS positions
+gps <- "09-78524.GPS.raw.track.txt"
+gdat <- read_tsv(gps) %>% select(Name, Day, Time, Longitude, Latitude, Longitude)
+
+
+```
+  
+The plot above shows the time series. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. You can only just make out night in this plot because the seal spends so much time diving deeply, and the light sensor on this tag picks up moonlight quite easily.
+
+We select a zenith `zen <- 95` as a good starting point for finding a light threshold. We know (from GPS data in this case, but generally from field notes) that the tag was at 72.9, -49.1 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
+
+
+```{r calibrate95}
+zen <- 97
+day <- as.POSIXct("2009-10-20 06:00:00", "UTC")
+d.lig$Date <- d.lig$Date - 60*60
+thresh <- calibrate(d.lig, day, 70.9, -48.0, offset = 3, zen) * 1.10
+```
+
+The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 95 degrees is indicated with a dashed line.
+
+We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
+
+```{r build_model}
+
+retrieved.at <- deployed.at <- c(70.7, -49.25)
+
+
+# specify the model
+model <- TwilightFree(d.lig,
+                      alpha=c(1, 1/25),
+                      beta=c(1, 1/5),
+                      zenith = zen, threshold = thresh, 
+                      deployed.at = deployed.at,
+                      retrieved.at = retrieved.at)
+```
+
+
+Now the forward-backward algorithm has everything it needs to fit the model - a model and a grid. A 90 day track takes less than a minute on most computers, `epsilon1` and `epsilon2` tell the algorithm which cells to exclude from the algorithm at each step (these are the very low likelihood locations given the data).
+
+```{r fit}
+# fit the model using the forward-backward algorithm, SGAT::essie
+fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6)
+```
+
+Let's have a look at the track - but first we need a function to turn the fitted object into a track, and another to plot it nicely.  
+`trip` takes the fitted object and returns a data frame with Date, Lon, Lat.  
+`drawTracks` takes the object returned from `trip` and plots it on a sensibly defined map.
+
+```{r trip}
+# return a track from an essie fit
+trip <- function(fit){
+  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
+  names(trip) <- c("Date", "Lon", "Lat")
+  return(trip)
+}
+
+colfunc<-colorRampPalette(c("red","springgreen","royalblue"))
+
+# plot track function
+drawTracks <- function(trip, col = "firebrick", main = ""){
+  xlm <- range(trip$Lon)
+  ylm <- range(trip$Lat)
+  
+  data(wrld_simpl)
+  plot(wrld_simpl,xlim=xlm,ylim=ylm,
+       col="grey90",border="grey80", main = main, axes = T)
+  
+  points(cbind(jitter(trip$Lon), jitter(trip$Lat)), col = colfunc(nrow(trip)))
+  lines(cbind(trip$Lon, trip$Lat), col = col)
+}
+
+
+track <- trip(fit)
+gdat$Day <- as.POSIXct(strptime(gdat$Day, "%d-%B-%Y"), tz = "UTC", "%Y-%m-%d")
+path <- na.omit(gdat[,c("Day", "Longitude", "Latitude")])
+path <- group_by(path, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+
+
+j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
+k <- filter(path, as.character(path$Day) %in% as.character(j$Date))
+
+drawTracks(track)
+lines(cbind(k$Lon, k$Lat), col = "dodgerblue")
+
+```
+
+```{r, hold = T}
+# calculate RMSE of lon, lat using mean daily GPS locations
+n = length(track$Lon)
+round(sqrt((1/n)*sum((track$Lon-k$Lon)^2)), 2)
+round(sqrt((1/n)*sum((track$Lat-k$Lat)^2)), 2)
+
+
+# calculate gcDist to nearest GPS position on any day
+j <- c()
+for(i in 1:length(track$Date)){
+  k <- subset(gdat, as.character(gdat$Day) %in% as.character(track$Date[i]))
+  j[i] <- min(gcDist(cbind(track$Lon[i], track$Lat[i]), cbind(k$Longitude, k$Latitude)), na.rm = T)
+}
+
+mean(j)
+sd(j)
+
+```
+
+### Repeat with another tag
