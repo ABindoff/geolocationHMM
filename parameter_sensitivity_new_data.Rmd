@@ -194,8 +194,8 @@ lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 
 #  raw GPS positions
-gps <- "09-86373.GPS.raw.track.txt"
-gdat <- read_tsv(gps) %>% select(Name, Day, Time, Longitude, Latitude, Longitude)
+gps <- "gps86373.csv"
+gdat <- read_csv(gps) 
 
 
 ```
@@ -266,9 +266,7 @@ drawTracks <- function(trip, col = "firebrick", main = ""){
 
 
 track <- trip(fit)
-gdat$Day <- as.POSIXct(strptime(gdat$Day, "%d-%B-%Y"), tz = "UTC", "%Y-%m-%d")
-path <- na.omit(gdat[,c("Day", "Longitude", "Latitude")])
-path <- group_by(path, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
 
 
 j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
@@ -300,20 +298,21 @@ sd(j)
 
 ### Repeat with another tag
 
+
 ```{r, hold = T}
 #  TDR light, depth, SST previously resampled to 2 min intervals
-tag <- "tdr78524.csv"
+tag <- "tdr86374.csv"
 d.lig <- read_csv(tag)
 d.lig$Temp <- NA
 
-d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-19 00:00:01",tz = "UTC") &
-                  Date < as.POSIXct("2010-01-03 15:00:01",tz = "UTC")) 
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-29 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-10 15:00:01",tz = "UTC")) 
 lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 
 #  raw GPS positions
-gps <- "09-78524.GPS.raw.track.txt"
-gdat <- read_tsv(gps) %>% select(Name, Day, Time, Longitude, Latitude, Longitude)
+gps <- "gps86374.csv"
+gdat <- read_csv(gps) 
 
 
 ```
@@ -323,71 +322,30 @@ The plot above shows the time series. The pixels represent the observed light, s
 We select a zenith `zen <- 95` as a good starting point for finding a light threshold. We know (from GPS data in this case, but generally from field notes) that the tag was at 72.9, -49.1 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
 
 
-```{r calibrate95}
-zen <- 97
-day <- as.POSIXct("2009-10-20 06:00:00", "UTC")
-d.lig$Date <- d.lig$Date - 60*60
-thresh <- calibrate(d.lig, day, 70.9, -48.0, offset = 3, zen) * 1.10
+```{r calibrate95_2}
+zen <- 98
+day <- as.POSIXct("2009-10-31 00:00:00", "UTC")
+thresh <- calibrate(d.lig, day, 72.9, -49.1, zen) * 1.10
 ```
 
-The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 95 degrees is indicated with a dashed line.
 
-We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
-
-```{r build_model}
+```{r build_model_2}
 
 retrieved.at <- deployed.at <- c(70.7, -49.25)
 
-
-# specify the model
-model <- TwilightFree(d.lig,
-                      alpha=c(1, 1/25),
-                      beta=c(1, 1/5),
-                      zenith = zen, threshold = thresh, 
-                      deployed.at = deployed.at,
-                      retrieved.at = retrieved.at)
 ```
 
 
-Now the forward-backward algorithm has everything it needs to fit the model - a model and a grid. A 90 day track takes less than a minute on most computers, `epsilon1` and `epsilon2` tell the algorithm which cells to exclude from the algorithm at each step (these are the very low likelihood locations given the data).
-
-```{r fit}
+```{r fit_2}
 # fit the model using the forward-backward algorithm, SGAT::essie
 fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6)
 ```
 
-Let's have a look at the track - but first we need a function to turn the fitted object into a track, and another to plot it nicely.  
-`trip` takes the fitted object and returns a data frame with Date, Lon, Lat.  
-`drawTracks` takes the object returned from `trip` and plots it on a sensibly defined map.
 
-```{r trip}
-# return a track from an essie fit
-trip <- function(fit){
-  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
-  names(trip) <- c("Date", "Lon", "Lat")
-  return(trip)
-}
-
-colfunc<-colorRampPalette(c("red","springgreen","royalblue"))
-
-# plot track function
-drawTracks <- function(trip, col = "firebrick", main = ""){
-  xlm <- range(trip$Lon)
-  ylm <- range(trip$Lat)
-  
-  data(wrld_simpl)
-  plot(wrld_simpl,xlim=xlm,ylim=ylm,
-       col="grey90",border="grey80", main = main, axes = T)
-  
-  points(cbind(jitter(trip$Lon), jitter(trip$Lat)), col = colfunc(nrow(trip)))
-  lines(cbind(trip$Lon, trip$Lat), col = col)
-}
-
+```{r trip_2}
 
 track <- trip(fit)
-gdat$Day <- as.POSIXct(strptime(gdat$Day, "%d-%B-%Y"), tz = "UTC", "%Y-%m-%d")
-path <- na.omit(gdat[,c("Day", "Longitude", "Latitude")])
-path <- group_by(path, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
 
 
 j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
@@ -417,4 +375,5 @@ sd(j)
 
 ```
 
-### Repeat with another tag
+### Repeat with another tag2
+
