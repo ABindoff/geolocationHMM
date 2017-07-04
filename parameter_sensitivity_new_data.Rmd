@@ -11,11 +11,12 @@ knitr::opts_chunk$set(echo = FALSE, message = F, warning = F)
 ```
 
 
-### Testing previously determined parameters
+### Parameter (or hyperparameter) sensitivity
 
-The twilight-free method of Bindoff et al. (2017) requires the user to determine shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Optimal shading and movement parameters are a function of animal behaviour in the twilight-free method. Once an optimum for an animal is determined (say, through double-tagging experiment), the method is not particularly sensitive to relatively small changes in these parameters - but this doesn't answer the question of how sensitive the method is to differences between tagged individuals of the same species. (FOR DISCUSSION AT END, different times of year)
+The twilight-free method of Bindoff et al. (2017) requires the user to choose shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any meaningful benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Optimal shading and movement parameters in a "twilight free" analysis are a function of animal behaviour. Once an optimum for an animal is determined (ideally by a double-tagging experiment), these parameters are expected to be useful in processing new data where the animal has not been double-tagged. For most species, sensor obscuration is caused by the same behaviours, and movement follows similar distributions.
 
-To answer this important question of parameter sensitivity (and ecological validity), we obtained light and gps data from several southern elephant seals and determined the accuracy and precision of the reconstructed tracks using the optimal parameters determined using data from an individual animal.
+Here we investigate the sensitivity of the method to these parameters (shading and movement), then test optimal parameters for one animal of one species on data from other animals of the same species, and finally we choose data from an animal displaying markedly different behaviour and investigate different parameters. In all cases the animals (southern elephant seals) were also tagged with GPS units, so their "true" positions are known (within sensor error).
+
 
 
 ```{r libraries, warning = F, message = F, echo = F}
@@ -289,10 +290,67 @@ psa <- function(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps
 params <- c(1/25, 1/4)
 ```
 
-### Tag 86373
+#### Parameter sensitivity
 
+Data from a double-tagging study (GLS light logger & GPS on the same animal) are analysed using a new method of light-based geolocation and the results presented in Bindoff et al. (2017). Tracks are reproduced using 3 shading x 3 movement parameters, and the results presented as deviation from the GPS track as per Results in Bindoff et al.
+
+
+```{r}
+#  TDR light, depth, SST previously resamples to 2 min intervals
+tag <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/TDR86372ds.csv"
+d.lig <- read_delim(tag, delim = ",", skip = 0, 
+                    col_names = c("Date", "Light","Depth","Temp"))
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-28 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-20 15:00:01",tz = "UTC")) 
+d.lig$Temp <- NA
+
+#  filtered GPS positions
+gps <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/86372_filteredGPS.csv"
+gdat <- read_csv(gps, skip = 0, 
+                   col_names = c("Day", "Longitude","Latitude"))
+gdat$Day <- strftime(strptime(gdat$Day, "%Y-%m-%d %H:%M:%S"), "%Y-%m-%d", tz = "UTC")
+gdat <- na.omit(gdat)
+path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+
+retrieved.at <- deployed.at <- c(70.75, -49.25) # as per paper
+
+thresh <- 129.2;  zen <- 97   # as per paper
+```
+
+```{r}
+params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
+               c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
+               c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
+x <- lapply(params, function(p)
+            psa(d.lig,
+                params = p,
+                zen = zen,
+                thresh = thresh,
+                deployed.at,
+                retrieved.at,
+                grid = grid,
+                gps = gdat))
+            
+foo <- function(x){
+  x[[1L]]
+}
+
+k <- sapply(x, foo) %>% as.data.frame()
+names(k) <- params
+save(k, "psa_86372.RData")
+```
+
+```{r}
+load("psa_86372.RData")
+print(t(k))
+
+```
   
-GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here.
+### Tag 86373
+  
+
+More GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations as per previous example. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here in the report body and code can be examined by downloading this file.  
+
 
 ```{r, echo = T, hold = T}
 #  raw GPS positions
@@ -317,7 +375,7 @@ lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 ```
   
-The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. The seal spends so much time diving that the times of twilight are not obvious, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
+The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels are bright daylight and black pixels are complete darkness. The seal spends so much time diving that the twilight times cannot be determined precisely, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
 
 We know (from GPS data in this case, but generally from field notes) that the tag was at 72.83, -49.12 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
 
@@ -503,11 +561,11 @@ x <- lapply(params, function(p)
                 retrieved.at = retr_depl_psa,
                 grid = grid,
                 gps = gdat_psa))
-            
-foo <- function(x){
-  x[[1L]]
-}
+save(k, file = "psa_78524.RData")
+```
 
+```{r}
+load("psa_78524.RData")
 k <- sapply(x, foo) %>% as.data.frame()
 names(k) <- params
 print(t(k))
