@@ -4,11 +4,16 @@ author: "Bindoff, A."
 date: "5 June 2017"
 output: html_document
 ---
+```{r setup, include=FALSE}
+options(width = 1800)
+knitr::opts_chunk$set(echo = FALSE, message = F, warning = F)
+
+```
 
 
 ### Testing previously determined parameters
 
-The twilight-free method of Bindoff et al. (2017) requires the user to determine shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Animal behaviour determines the optimal shading and movement parameters in the twilight-free method. Once an optimum for an animal is determined (say, through double-tagging experiment), the method is not particularly sensitive to relatively small changes in these parameters - but this doesn't answer the question of how sensitive the method is to actual changes in species' behaviour using the optimal parameters for an individual.
+The twilight-free method of Bindoff et al. (2017) requires the user to determine shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Optimal shading and movement parameters are a function of animal behaviour in the twilight-free method. Once an optimum for an animal is determined (say, through double-tagging experiment), the method is not particularly sensitive to relatively small changes in these parameters - but this doesn't answer the question of how sensitive the method is to differences between tagged individuals of the same species. (FOR DISCUSSION AT END, different times of year)
 
 To answer this important question of parameter sensitivity (and ecological validity), we obtained light and gps data from several southern elephant seals and determined the accuracy and precision of the reconstructed tracks using the optimal parameters determined using data from an individual animal.
 
@@ -119,33 +124,60 @@ logp0 <- function(k, x, slices) {
 
 ```{r threshold_using_calibrate, echo = F}
 # find a threshold using calibration position and date
-calibrate <- function(df, day, lon, lat, zenith = 96, offset = 0, verbose = T){
-  day <- day + offset*60*60  # `day` is a POSIXct date-time object usually in GMT so an `offset` parameter is provided 
-                             # to quickly shift the data so that the night isn't cut off 
-  single.day <- subset(df, df$Date >= as.POSIXct(day, tz = "GMT") & df$Date < as.POSIXct(day+24*60*60, tz = "GMT"))
-  
-  d.sim <- zenithSimulate(single.day$Date,
-                          lon = rep(lon, length(single.day$Date)),
-                          lat = rep(lat, length(single.day$Date)),
-                          single.day$Date)
-  d.sim$Light <- ifelse(d.sim$Zenith < zenith, max(single.day$Light, na.rm = T), 1)
-  thresh <- max(single.day$Light[which(d.sim$Zenith >= zenith)])
-  
-  if(verbose){
-    plot(single.day$Date,
-         single.day$Light,
-         col = "red",type = "l",
-         lwd = 2,
-         ylim = c(0,max(single.day$Light, na.rm = T)),
-         xlab = day, main = cbind(lon, lat))
-    lines(d.sim$Date, d.sim$Light, lwd = 2)
-    abline(h = thresh, lty = 2)
-    print(paste0("max light in night window: ", thresh, " assuming a solar zenith angle of: ", zenith))
+calibrate <-
+  function(df,
+           day,
+           lon,
+           lat,
+           zenith = 96,
+           offset = 0,
+           verbose = T) {
+    day <-
+      day + offset * 60 * 60  # `day` is a POSIXct date-time object usually in GMT so an `offset` parameter is provided
+    # to quickly shift the data so that the night isn't cut off
+    single.day <-
+      subset(
+        df,
+        df$Date >= as.POSIXct(day, tz = "GMT") &
+          df$Date < as.POSIXct(day + 24 * 60 * 60, tz = "GMT")
+      )
+    
+    d.sim <- zenithSimulate(
+      single.day$Date,
+      lon = rep(lon, length(single.day$Date)),
+      lat = rep(lat, length(single.day$Date)),
+      single.day$Date
+    )
+    d.sim$Light <-
+      ifelse(d.sim$Zenith < zenith, max(single.day$Light, na.rm = T), 1)
+    thresh <- max(single.day$Light[which(d.sim$Zenith >= zenith)])
+    
+    if (verbose) {
+      plot(
+        single.day$Date,
+        single.day$Light,
+        col = "red",
+        type = "l",
+        lwd = 2,
+        ylim = c(0, max(single.day$Light, na.rm = T)),
+        xlab = day,
+        main = cbind(lon, lat)
+      )
+      lines(d.sim$Date, d.sim$Light, lwd = 2)
+      abline(h = thresh, lty = 2)
+      print(
+        paste0(
+          "max light in night window: ",
+          thresh,
+          " assuming a solar zenith angle of: ",
+          zenith
+        )
+      )
+    }
+    
+    return(thresh)
+    
   }
-  
-  return(thresh)
-  
-}
 ```
 
 
@@ -178,68 +210,39 @@ make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask 
   return(grid)
 }
 
-grid <- make.grid(c(45, 115), c(-65, -35), cell.size = 1, mask = "sea")
-plot(grid)
-```
+grid <- make.grid(c(45, 115), c(-68, -35), cell.size = 1, mask = "sea")
 
-```{r, hold = T}
-#  TDR light, depth, SST previously resampled to 2 min intervals
-tag <- "tdr86373.csv"
-d.lig <- read_csv(tag)
-d.lig$Temp <- NA
-
-d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-29 00:00:01",tz = "UTC") &
-                  Date < as.POSIXct("2010-01-10 15:00:01",tz = "UTC")) 
-lightImage(d.lig, offset = 5, zlim = c(0,130))
-
-
-#  raw GPS positions
-gps <- "gps86373.csv"
-gdat <- read_csv(gps) 
-
-
-```
+acc_prec <- function(gls, gps, gps_full){
+  # some days will be missing from gps data, and the gps data typically extends
+  # from days before and after it is deployed on the animal so we find the intersection
+  j <- filter(gls, as.character(gls$Date) %in% as.character(gps$Day))
+  k <- filter(gps, as.character(gps$Day) %in% as.character(j$Date))
   
-The plot above shows the time series. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. You can only just make out night in this plot because the seal spends so much time diving deeply, and the light sensor on this tag picks up moonlight quite easily.
+  # calculate RMSE of lon, lat using mean daily GPS fixes
+  # (this is for consistency with previously published works)
+  n = length(k$Lon)
+  rmse_lon <- round(sqrt((1/n)*sum((j$Lon - k$Lon)^2)), 2)
+  rmse_lat <- round(sqrt((1/n)*sum((j$Lat - k$Lat)^2)), 2)
+  
+  
+  # calculate gcDist to nearest GPS position on any day
+  # (this is to remove biases in taking the mean of daily gps fixes,
+  # e.g far ranging animals, track arcs, etc)
+  m <- c()
+  for(i in 1:length(j$Date)){
+    n <- subset(gps_full, as.character(gps_full$Day) %in% as.character(j$Date[i]))
+    m[i] <- min(gcDist(cbind(j$Lon[i],
+                             j$Lat[i]),
+                      cbind(n$Longitude,
+                            n$Latitude)), na.rm = T)
+  }
+  
+  gcd_mean <- mean(m)
+  gcd_sd <- sd(m)
+  return(data.frame(rmse_lon, rmse_lat, gcd_mean, gcd_sd))
+}
 
-We select a zenith `zen <- 95` as a good starting point for finding a light threshold. We know (from GPS data in this case, but generally from field notes) that the tag was at 72.9, -49.1 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
-
-
-```{r calibrate95}
-zen <- 98
-day <- as.POSIXct("2009-10-31 00:00:00", "UTC")
-thresh <- calibrate(d.lig, day, 72.9, -49.1, zen) * 1.10
 ```
-
-The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 95 degrees is indicated with a dashed line.
-
-We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
-
-```{r build_model}
-
-retrieved.at <- deployed.at <- c(70.7, -49.25)
-
-
-# specify the model
-model <- TwilightFree(d.lig,
-                      alpha=c(1, 1/25),
-                      beta=c(1, 1/5),
-                      zenith = zen, threshold = thresh, 
-                      deployed.at = deployed.at,
-                      retrieved.at = retrieved.at)
-```
-
-
-Now the forward-backward algorithm has everything it needs to fit the model - a model and a grid. A 90 day track takes less than a minute on most computers, `epsilon1` and `epsilon2` tell the algorithm which cells to exclude from the algorithm at each step (these are the very low likelihood locations given the data).
-
-```{r fit}
-# fit the model using the forward-backward algorithm, SGAT::essie
-fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6)
-```
-
-Let's have a look at the track - but first we need a function to turn the fitted object into a track, and another to plot it nicely.  
-`trip` takes the fitted object and returns a data frame with Date, Lon, Lat.  
-`drawTracks` takes the object returned from `trip` and plots it on a sensibly defined map.
 
 ```{r trip}
 # return a track from an essie fit
@@ -264,44 +267,44 @@ drawTracks <- function(trip, col = "firebrick", main = ""){
   lines(cbind(trip$Lon, trip$Lat), col = col)
 }
 
-
-track <- trip(fit)
-path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
-
-
-j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
-k <- filter(path, as.character(path$Day) %in% as.character(j$Date))
-
-drawTracks(track)
-lines(cbind(k$Lon, k$Lat), col = "dodgerblue")
-
 ```
 
-```{r, hold = T}
-# calculate RMSE of lon, lat using mean daily GPS locations
-n = length(track$Lon)
-round(sqrt((1/n)*sum((track$Lon-k$Lon)^2)), 2)
-round(sqrt((1/n)*sum((track$Lat-k$Lat)^2)), 2)
+```{r psa}
+psa <- function(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps){
+  model <- TwilightFree(d.lig,
+                      alpha=c(1, params[1L]),
+                      beta=c(1, params[2L]),
+                      zenith = zen, threshold = thresh, 
+                      deployed.at = deployed.at,
+                      retrieved.at = retrieved.at)
+  fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6, verbose = F)
+  track <- trip(fit)
+  path <- group_by(gps, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+  k <- filter(path, as.character(path$Day) %in% as.character(track$Date))
 
+  return(list(acc_prec(track, path, gps), track, k))
 
-# calculate gcDist to nearest GPS position on any day
-j <- c()
-for(i in 1:length(track$Date)){
-  k <- subset(gdat, as.character(gdat$Day) %in% as.character(track$Date[i]))
-  j[i] <- min(gcDist(cbind(track$Lon[i], track$Lat[i]), cbind(k$Longitude, k$Latitude)), na.rm = T)
 }
 
-mean(j)
-sd(j)
-
+params <- c(1/25, 1/4)
 ```
 
-### Repeat with another tag
+### Tag 86373
 
+  
+GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here.
 
-```{r, hold = T}
+```{r, echo = T, hold = T}
+#  raw GPS positions
+gps <- "gps86373.csv"
+gdat <- read_csv(gps) 
+path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+head(path); tail(path)
+
+retrieved.at <- deployed.at <- c(70.5, -49.3)
+
 #  TDR light, depth, SST previously resampled to 2 min intervals
-tag <- "tdr86374.csv"
+tag <- "tdr86373.csv"
 d.lig <- read_csv(tag)
 d.lig$Temp <- NA
 
@@ -310,70 +313,209 @@ d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-29 00:00:01",tz = "UTC") &
 lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 
-#  raw GPS positions
-gps <- "gps86374.csv"
-gdat <- read_csv(gps) 
 
 
 ```
   
-The plot above shows the time series. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. You can only just make out night in this plot because the seal spends so much time diving deeply, and the light sensor on this tag picks up moonlight quite easily.
+The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels are full daylight and black pixels are complete darkness. The seal spends so much time diving that the times of twilight are not obvious, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
 
-We select a zenith `zen <- 95` as a good starting point for finding a light threshold. We know (from GPS data in this case, but generally from field notes) that the tag was at 72.9, -49.1 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
+We know (from GPS data in this case, but generally from field notes) that the tag was at 72.83, -49.12 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
 
 
-```{r calibrate95_2}
+```{r calibrate95, echo = T}
 zen <- 98
 day <- as.POSIXct("2009-10-31 00:00:00", "UTC")
-thresh <- calibrate(d.lig, day, 72.9, -49.1, zen) * 1.10
+thresh <- calibrate(d.lig, day, 72.83, -49.12, zen) * 1.05
+
+```
+
+
+The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 98 degrees is indicated with a dashed line. A small margin (5%) is added to allow for moon phases.
+
+We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
+
+```{r build_model}
+
+x <- psa(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps = gdat)
+drawTracks(x[[2L]])
+lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
+x[[1L]]
+```
+
+Most of the error is in longitude, accuracy and precision are comparable with the example shown in Bindoff et al. (2017)
+
+### Tag 78524
+
+
+```{r, hold = T}
+
+#  raw GPS positions
+gps <- "gps78524.csv"
+gdat <- gdat_psa <- read_csv(gps) 
+path <- path_psa <- group_by(gdat, Day) %>%
+  summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+#head(path); tail(path)
+
+```
+
+```{r}
+retrieved.at <- deployed.at <- retr_depl_psa <- c(70.5, -49.2)
+
+
+#  TDR light, depth, SST previously resampled to 2 min intervals
+tag <- "tdr78524.csv"
+d.lig <- read_csv(tag)
+d.lig$Temp <- NA
+d.lig$Date <- d.lig$Date - 1*60*60  # clock clearly set to another tz on this tag
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-19 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-03 15:00:01",tz = "UTC")) 
+d.lig_psa <- d.lig
+lightImage(d.lig, offset = 5, zlim = c(0,130))
+
+
+
+
+```
+  
+
+```{r calibrate95_2}
+zen <- zen_psa <- 97
+day <- as.POSIXct("2009-10-23 00:00:00", "UTC")
+
+thresh <- thresh_psa <- calibrate(d.lig, day, 71.72, -45.31, zen, verbose = F) * 1.05
 ```
 
 
 ```{r build_model_2}
+x <- psa(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps = gdat)
+drawTracks(x[[2L]])
+lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
+x[[1L]]
+```
+
+Again, performance is comparable with the example shown in Bindoff et al. Accuracy and precision are similar to other published methods where data are not as compromised by noise from shading of the sensor.
+
+### Tag 86374
+
+```{r, hold = T}
+
+#  raw GPS positions
+gps <- "gps86374.csv"
+gdat <- read_csv(gps) 
+path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
+# head(path); tail(path)
+#  TDR light, depth, SST previously resampled to 2 min intervals
+tag <- "tdr86374.csv"
+d.lig <- read_csv(tag)
+d.lig$Temp <- NA
+
+d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-19 00:00:01",tz = "UTC") &
+                  Date < as.POSIXct("2010-01-11 15:00:01",tz = "UTC")) 
+lightImage(d.lig, offset = 5, zlim = c(0,130))
+
+
+
+
+```
+  
+This animal clearly travelled inside the Antarctic Circle during the Austral summer, where there is no night. He spent about a month there, so our estimates during this period are very unlikely to be reliable. Under normal circumstances, we would incorporate this prior knowledge into our model by taking a subset of our data and analysing those periods for which we can make reliable estimates only. However, we have GPS data to compare to in this experiment so this is a good opportunity to see how the method performs under these "impossible" conditions (the subset will be analysed separately below).
+
+
+
+```{r calibrate95_3}
 
 retrieved.at <- deployed.at <- c(70.7, -49.25)
 
+zen <- 98
+day <- as.POSIXct("2009-10-21 00:00:00", "UTC")
+
+thresh <- calibrate(d.lig, day, 72.55, -50.25, zen, verbose = F) * 1.05
 ```
 
 
-```{r fit_2}
-# fit the model using the forward-backward algorithm, SGAT::essie
-fit <- SGAT::essie(model,grid,epsilon1=1.0E-4, epsilon2 = 1E-6)
-```
-
-
-```{r trip_2}
-
-track <- trip(fit)
-path <- group_by(gdat, Day) %>% summarise(Lon = mean(Longitude), Lat = mean(Latitude))
-
-
-j <- filter(track, as.character(track$Date) %in% as.character(path$Day))
-k <- filter(path, as.character(path$Day) %in% as.character(j$Date))
-
-drawTracks(track)
-lines(cbind(k$Lon, k$Lat), col = "dodgerblue")
+```{r build_model_3}
+x <- psa(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps = gdat)
+drawTracks(x[[2L]])
+lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
+x[[1L]]
 
 ```
 
-```{r, hold = T}
-# calculate RMSE of lon, lat using mean daily GPS locations
-n = length(track$Lon)
-round(sqrt((1/n)*sum((track$Lon-k$Lon)^2)), 2)
-round(sqrt((1/n)*sum((track$Lat-k$Lat)^2)), 2)
+
+As we might expect,  estimates of latitude when the animal was inside the Antarctic Circle are pretty good, but longitude is impossible to estimate. This has consequences for longitude even when the animal leaves the Antarctic circle, as an artefact of the forwards-backwards algorithm. Unfortunately, incorporating SST as a covariate would (likely) not have improved this track, but a sighting on the ice would have.
+
+  
+We split the track into two parts with observable nights and try again.
+
+```{r}
+#  the following code snippet was used to determine these dates with two mouse clicks
+#ts <- lightImage(d.lig,offset=5, zlim = c(0,130))
+#dates <- tsimageLocator(ts, n=2)
+
+d.lig1 <- filter(d.lig, Date < "2009-11-20")
+d.lig2 <- filter(d.lig, Date > "2010-01-01")
 
 
-# calculate gcDist to nearest GPS position on any day
-j <- c()
-for(i in 1:length(track$Date)){
-  k <- subset(gdat, as.character(gdat$Day) %in% as.character(track$Date[i]))
-  j[i] <- min(gcDist(cbind(track$Lon[i], track$Lat[i]), cbind(k$Longitude, k$Latitude)), na.rm = T)
+```
+
+```{r build_model_4}
+
+x1 <- psa(d.lig1, params, zen, thresh, deployed.at, retrieved.at = F, grid, gps = gdat)
+drawTracks(x1[[2L]])
+lines(cbind(x1[[3L]]$Lon, x1[[3L]]$Lat), col = "dodgerblue")
+x1[[1L]]
+
+x2 <- psa(d.lig2, params, zen, thresh, deployed.at = F, retrieved.at, grid, gps = gdat)
+drawTracks(x2[[2L]])
+lines(cbind(x2[[3L]]$Lon, x2[[3L]]$Lat), col = "dodgerblue")
+x2[[1L]]
+
+
+
+```
+
+
+
+Accuracy and precision of both parts of the piece-wise track:  
+
+
+```{r}
+acc_prec(rbind(x1[[2L]], x2[[2L]]), rbind(x1[[3L]], x2[[3L]]), gdat)
+
+```
+
+
+#### PSA for tag 78524
+
+The behaviour of the animal from which tag 78524 was retrieved was markedly different from the animal in the methods paper (Bindoff et al. 2017). This raises the question of how much improvement in location estimation might be gained from different movement and shading parameters. Results are reported below.
+
+
+```{r psa_out}
+params <- list(c(1/5, 1/2), c(1/10, 1/2), c(1/25, 1/2),
+               c(1/50, 1/2), c(1/100, 1/2),
+               c(1/5, 1/4), c(1/10, 1/4), c(1/25, 1/4),
+               c(1/50, 1/4), c(1/100, 1/4),
+               c(1/5, 1/8), c(1/10, 1/8), c(1/25, 1/8),
+               c(1/50, 1/8), c(1/100, 1/8))
+x <- lapply(params, function(p)
+            psa(d.lig_psa,
+                params = p,
+                zen = zen_psa,
+                thresh = thresh_psa,
+                deployed.at = retr_depl_psa,
+                retrieved.at = retr_depl_psa,
+                grid = grid,
+                gps = gdat_psa))
+            
+foo <- function(x){
+  x[[1L]]
 }
 
-mean(j)
-sd(j)
+k <- sapply(x, foo) %>% as.data.frame()
+names(k) <- params
+print(t(k))
 
 ```
 
-### Repeat with another tag2
+
 
