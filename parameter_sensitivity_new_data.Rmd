@@ -268,6 +268,11 @@ drawTracks <- function(trip, col = "firebrick", main = ""){
   lines(cbind(trip$Lon, trip$Lat), col = col)
 }
 
+foo <- function(x){
+  x[[1L]]
+}
+
+
 ```
 
 ```{r psa}
@@ -290,9 +295,9 @@ psa <- function(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps
 params <- c(1/25, 1/4)
 ```
 
-#### Parameter sensitivity
+#### Parameter sensitivity tag 86372
 
-Data from a double-tagging study (GLS light logger & GPS on the same animal) are analysed using a new method of light-based geolocation and the results presented in Bindoff et al. (2017). Tracks are reproduced using 3 shading x 3 movement parameters, and the results presented as deviation from the GPS track as per Results in Bindoff et al.
+Data from a double-tagging study (GLS light logger & GPS on the same animal, tag 86372) are analysed using a new method of light-based geolocation and the results are presented in Bindoff et al. (2017). Tracks are reproduced using 3 shading x 3 movement parameters, and the results presented here as deviation from the GPS track as per Results in Bindoff et al.
 
 
 ```{r}
@@ -317,7 +322,7 @@ retrieved.at <- deployed.at <- c(70.75, -49.25) # as per paper
 thresh <- 129.2;  zen <- 97   # as per paper
 ```
 
-```{r}
+```{r, eval = F}
 params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
                c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
                c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
@@ -331,13 +336,10 @@ x <- lapply(params, function(p)
                 grid = grid,
                 gps = gdat))
             
-foo <- function(x){
-  x[[1L]]
-}
 
 k <- sapply(x, foo) %>% as.data.frame()
 names(k) <- params
-save(k, "psa_86372.RData")
+save(k, file = "psa_86372.RData")
 ```
 
 ```{r}
@@ -393,7 +395,7 @@ The red line is the observed light trace. It's wiggly because the animal was div
 We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
 
 ```{r build_model}
-
+params <- c(1/25, 1/4)
 x <- psa(d.lig, params, zen, thresh, deployed.at, retrieved.at, grid, gps = gdat)
 drawTracks(x[[2L]])
 lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
@@ -548,7 +550,7 @@ acc_prec(rbind(x1[[2L]], x2[[2L]]), rbind(x1[[3L]], x2[[3L]]), gdat)
 The behaviour of the animal from which tag 78524 was retrieved was markedly different from the animal in the methods paper (Bindoff et al. 2017). This raises the question of how much improvement in location estimation might be gained from different movement and shading parameters. Results are reported below.
 
 
-```{r psa_out}
+```{r psa_out, eval = T}
 params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
                c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
                c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
@@ -561,13 +563,15 @@ x <- lapply(params, function(p)
                 retrieved.at = retr_depl_psa,
                 grid = grid,
                 gps = gdat_psa))
+
+k <- sapply(x, foo) %>% as.data.frame()
+names(k) <- params
 save(k, file = "psa_78524.RData")
 ```
 
 ```{r}
 load("psa_78524.RData")
-k <- sapply(x, foo) %>% as.data.frame()
-names(k) <- params
+
 print(t(k))
 
 ```
