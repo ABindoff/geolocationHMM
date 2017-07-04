@@ -550,7 +550,7 @@ acc_prec(rbind(x1[[2L]], x2[[2L]]), rbind(x1[[3L]], x2[[3L]]), gdat)
 The behaviour of the animal from which tag 78524 was retrieved was markedly different from the animal in the methods paper (Bindoff et al. 2017). This raises the question of how much improvement in location estimation might be gained from different movement and shading parameters. Results are reported below.
 
 
-```{r psa_out, eval = T}
+```{r psa_out, eval = F}
 params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
                c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
                c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
