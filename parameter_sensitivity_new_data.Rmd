@@ -13,9 +13,11 @@ knitr::opts_chunk$set(echo = FALSE, message = F, warning = F)
 
 ### Parameter (or hyperparameter) sensitivity
 
-The twilight-free method of Bindoff et al. (2017) requires the user to choose shading and movement parameters, a cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6 as smaller values don't seem to confer any meaningful benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Optimal shading and movement parameters in a "twilight free" analysis are a function of animal behaviour. Once an optimum for an animal is determined (ideally by a double-tagging experiment), these parameters are expected to be useful in processing new data where the animal has not been double-tagged. For most species, sensor obscuration is caused by the same behaviours, and movement follows similar distributions.
+The twilight-free method of Bindoff et al. (2017) requires the user to select a number of parameters -- shading and movement parameters, cell size, epsilons to discard low likelihood locations, and a threshold and zenith angle. 
+  
+Cell size and epsilon are a trade off between speed and precision and can usually be left at 1x1 degree and 1e-6, as smaller values don't seem to confer any meaningful benefit. Threshold and zenith angle are dependent on sensor properties (and each other) and can be reliably estimated provided the tag was calibrated correctly. Optimal shading and movement parameters in a "twilight free" analysis are a function of animal behaviour. Once an optimum for an animal is determined (ideally by a double-tagging experiment), these parameters are expected to be useful in processing *data from new tags* where the animal has not been double-tagged. For most species, sensor obscuration is caused by the same behaviours, and movement follows similar distributions.
 
-Here we investigate the sensitivity of the method to these parameters (shading and movement), then test optimal parameters for one animal of one species on data from other animals of the same species, and finally we choose data from an animal displaying markedly different behaviour and investigate different parameters. In all cases the animals (southern elephant seals) were also tagged with GPS units, so their "true" positions are known (within sensor error).
+Here we investigate the sensitivity of the method to these parameters (shading and movement) on the southern elephant seal data presented in the published paper, then test those optimal parameters on data from other southern elephant seals, and finally we choose data from an animal displaying markedly different behaviour and investigate a range of parameters. In all cases the seals were also tagged with GPS units, so their "true" positions are known and we can calculate RMSE and great circle distance from these positions.
 
 
 
@@ -248,7 +250,9 @@ acc_prec <- function(gls, gps, gps_full){
 ```{r trip}
 # return a track from an essie fit
 trip <- function(fit){
-  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
+  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time,
+                                         "%Y-%m-%d")),
+                     essieMode(fit)$x)
   names(trip) <- c("Date", "Lon", "Lat")
   return(trip)
 }
@@ -264,8 +268,9 @@ drawTracks <- function(trip, col = "firebrick", main = ""){
   plot(wrld_simpl,xlim=xlm,ylim=ylm,
        col="grey90",border="grey80", main = main, axes = T)
   
-  points(cbind(jitter(trip$Lon), jitter(trip$Lat)), col = colfunc(nrow(trip)))
-  lines(cbind(trip$Lon, trip$Lat), col = col)
+  points(cbind(jitter(trip$Lon), jitter(trip$Lat)),
+         col = colfunc(nrow(trip)), pch = 16)
+  lines(cbind(trip$Lon, trip$Lat), col = "grey70")
 }
 
 foo <- function(x){
@@ -348,13 +353,18 @@ print(t(k))
 
 ```
   
+  
+All combinations of parameters arguably gave acceptably good results for most light level geolocation purposes.
+  
+  
 ### Tag 86373
   
 
-More GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations as per previous example. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here in the report body and code can be examined by downloading this file.  
+Additional GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations as per previous example (R script resample_tdr.R is provided in repository for completeness and transparency). Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here in the report body and code can be examined by downloading the R markdown file that generated this HTML at https://github.com/ABindoff/geolocationHMM/blob/master/parameter_sensitivity_new_data.Rmd  
 
 
-```{r, echo = T, hold = T}
+
+```{r, echo = T, hold = T, eval = T}
 #  raw GPS positions
 gps <- "gps86373.csv"
 gdat <- read_csv(gps) 
@@ -377,9 +387,9 @@ lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 ```
   
-The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels are bright daylight and black pixels are complete darkness. The seal spends so much time diving that the twilight times cannot be determined precisely, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
+The plot above shows the time series of light observations, each column represents 24 hours. The pixels represent the maximum observed light at each sample, so white pixels represent bright daylight and black pixels represent complete darkness. This seal spends so much time diving that the twilight times cannot be determined precisely, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
 
-We know (from GPS data in this case, but generally from field notes) that the tag was at 72.83, -49.12 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
+We know (from GPS data in this case, but more often from field notes) that the tag was at 72.83, -49.12 on the 31st of October 2009 so we pass what we know to `calibrate` and inspect the light trace.
 
 
 ```{r calibrate95, echo = T}
@@ -390,9 +400,9 @@ thresh <- calibrate(d.lig, day, 72.83, -49.12, zen) * 1.05
 ```
 
 
-The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 98 degrees is indicated with a dashed line. A small margin (5%) is added to allow for moon phases.
+The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun was below 98 degrees is indicated with a dashed line. A small margin (5%) is added to allow for moon phases.
 
-We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
+We know where the tag was deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model. The helper function used here does everything for us, given a list of shading and movement parameters as tuples. In this example (to save processing time) the list contains one tuple, being the optimum parameters determined above (and presented in the methods paper).
 
 ```{r build_model}
 params <- c(1/25, 1/4)
@@ -453,7 +463,7 @@ lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
 x[[1L]]
 ```
 
-Again, performance is comparable with the example shown in Bindoff et al. Accuracy and precision are similar to other published methods where data are not as compromised by noise from shading of the sensor.
+Again, performance is comparable with the example shown in Bindoff et al. Accuracy and precision are similar to other published methods where data are not as compromised by noise from shading of the sensor as they are in this example.
 
 ### Tag 86374
 
@@ -478,7 +488,7 @@ lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 ```
   
-This animal clearly travelled inside the Antarctic Circle during the Austral summer, where there is no night. He spent about a month there, so our estimates during this period are very unlikely to be reliable. Under normal circumstances, we would incorporate this prior knowledge into our model by taking a subset of our data and analysing those periods for which we can make reliable estimates only. However, we have GPS data to compare to in this experiment so this is a good opportunity to see how the method performs under these "impossible" conditions (the subset will be analysed separately below).
+This animal clearly travelled inside the Antarctic Circle during the Austral summer, where the nights are very brief or non-existent. He spent about a month there, so our estimates during this period are *very unlikely to be reliable*. Under normal circumstances, we would incorporate this prior knowledge into our model by taking a subset of our data and analysing those periods for which we can make reliable estimates. However, we have GPS data to compare to in this experiment so this is a good opportunity to see how the method performs under these "impossible" conditions (the subset will be analysed separately below).
 
 
 
@@ -502,7 +512,7 @@ x[[1L]]
 ```
 
 
-As we might expect,  estimates of latitude when the animal was inside the Antarctic Circle are pretty good, but longitude is impossible to estimate. This has consequences for longitude even when the animal leaves the Antarctic circle, as an artefact of the forwards-backwards algorithm. Unfortunately, incorporating SST as a covariate would (likely) not have improved this track, but a sighting on the ice would have.
+As we might expect,  estimates of latitude when the animal was inside the Antarctic Circle are pretty good (where else would the animal be?), but longitude is impossible to estimate. This has consequences for estimated longitude even when the animal leaves the Antarctic circle, as an artefact of the forwards-backwards algorithm. Unfortunately, incorporating SST as a covariate would (likely) not have improved this track, but a sighting on the ice would have.
 
   
 We split the track into two parts with observable nights and try again.
@@ -576,5 +586,5 @@ print(t(k))
 
 ```
 
-
+The previously determined parameters were not the most accurate, but they were well within an acceptable range for light level geolocation.
 
