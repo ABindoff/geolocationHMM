@@ -2,7 +2,7 @@
 title: "using_previously_determined_parameters"
 author: "Bindoff, A."
 date: "5 June 2017"
-output: html_document
+output: github_document
 ---
 ```{r setup, include=FALSE}
 options(width = 1800)
