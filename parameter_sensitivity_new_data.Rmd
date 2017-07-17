@@ -1,10 +1,8 @@
 ---
-title: "using_previously_determined_parameters"
 author: "Bindoff, A."
-date: "5 June 2017"
+date: "17 July 2017"
 output:
-  word_document: default
-  html_document: default
+  github_document: default
 ---
 ```{r setup, include=FALSE}
 options(width = 1800)
@@ -31,6 +29,7 @@ library(raster)
 library(maptools)
 library(readr)
 library(dplyr)
+library(knitr)
 ```
 
   
@@ -299,7 +298,7 @@ params <- c(1/25, 1/4)
 
 #### Parameter sensitivity tag 86372
 
-Data from a double-tagging study (GLS light logger & GPS on the same animal, tag 86372) are analysed using a new method of light-based geolocation and the results are presented in Bindoff et al. (2017). Tracks are reproduced using 3 shading x 3 movement parameters, and the results presented here as deviation from the GPS track as per Results in Bindoff et al.
+Data from a double-tagging study (GLS light logger & GPS on the same animal, tag 86372) are analysed using a new method of light-based geolocation and the results are presented in Bindoff et al. (2017). 25 tracks are reproduced using 5 shading x 5 movement parameters, and the results presented here as deviation from the GPS track as per Results in Bindoff et al.
 
 
 ```{r}
@@ -325,9 +324,12 @@ thresh <- 129.2;  zen <- 97   # as per paper
 ```
 
 ```{r, eval = F}
-params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
-               c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
-               c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
+params <- list(c(1/5, 3/4), c(1/10, 3/4), c(1/25, 3/4), c(1/50, 3/4), c(1/100, 3/4),
+               c(1/5, 1/2), c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), c(1/100, 1/2),
+               c(1/5, 1/4), c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), c(1/100, 1/4), 
+               c(1/5, 1/8), c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8), c(1/100, 1/8),
+               c(1/5,1/16), c(1/10,1/16), c(1/25,1/16), c(1/50,1/16), c(1/100,1/16))
+
 x <- lapply(params, function(p)
             psa(d.lig,
                 params = p,
@@ -346,14 +348,31 @@ save(k, file = "psa_86372.RData")
 
 ```{r}
 load("psa_86372.RData")
-print(t(k))
+
+
+k <- as.data.frame(t(k), row.names = F)
+params <- list(c(1/5, 3/4), c(1/10, 3/4), c(1/25, 3/4), c(1/50, 3/4), c(1/100, 3/4),
+               c(1/5, 1/2), c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), c(1/100, 1/2),
+               c(1/5, 1/4), c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), c(1/100, 1/4), 
+               c(1/5, 1/8), c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8), c(1/100, 1/8),
+               c(1/5,1/16), c(1/10,1/16), c(1/25,1/16), c(1/50,1/16), c(1/100,1/16))
+
+for(i in 1:nrow(k)){
+  k$shading[i] <- round(params[[i]][1],2)
+  k$movement[i] <- round(params[[i]][2],4)
+}
+
+k[,3] <- round(as.numeric(k[,3]), 1)
+k[,4] <- round(as.numeric(k[,4]), 1)
+
+kable(k)
 
 ```
   
 ### Tag 86373
   
 
-More GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations as per previous example. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. The script is also shown here in the report body and code can be examined by downloading this file.  
+More GLS tag data are read from high resolution TDR files which have been resampled from 2 sec observations to 2 min observations as per previous example. Unfiltered GPS data are summarised to daily means of longitude and latitude. In this first example, the first and last few observations of GPS daily means are printed to show how deployment and retrieval locations, and a single day observation for calibration were determined. Code can be [downloaded here.](https://github.com/ABindoff/geolocationHMM/blob/master/parameter_sensitivity_new_data.Rmd)  
 
 
 ```{r, echo = T, hold = T}
@@ -379,7 +398,7 @@ lightImage(d.lig, offset = 5, zlim = c(0,130))
 
 ```
   
-The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels are bright daylight and black pixels are complete darkness. The seal spends so much time diving that the twilight times cannot be determined precisely, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values.
+The plot above shows the time series of light observations, day by day. The pixels represent the observed light, so white pixels represent bright daylight and black pixels represent complete darkness. The seal spends so much time diving that the twilight times cannot be determined precisely, and the light sensor on this tag picked up moonlight quite easily, so phases of the moon will have an effect on our threshold values (a less obvious source of 'noise').
 
 We know (from GPS data in this case, but generally from field notes) that the tag was at 72.83, -49.12 on the 31st of October 2009 so we give what we know to `calibrate` and inspect the light trace.
 
@@ -394,7 +413,8 @@ thresh <- calibrate(d.lig, day, 72.83, -49.12, zen) * 1.05
 
 The red line is the observed light trace. It's wiggly because the animal was diving regularly throughout the journey. The maximum light observed when the sun is below 98 degrees is indicated with a dashed line. A small margin (5%) is added to allow for moon phases.
 
-We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model.
+We know where the tag deployed and retrieved so we set `retrieved.at` and `deployed.at` accordingly a build our TwilightFree model using the 'best' parameters determined for tag 86372 above.  
+
 
 ```{r build_model}
 params <- c(1/25, 1/4)
@@ -404,9 +424,12 @@ lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
 x[[1L]]
 ```
 
-Most of the error is in longitude, accuracy and precision are comparable with the example shown in Bindoff et al. (2017)
+Most of the error is in longitude, accuracy and precision are comparable with the analysis of tag 86372.  
+
 
 ### Tag 78524
+
+Using parameters determined for tag 86372 again,  
 
 
 ```{r, hold = T}
@@ -455,7 +478,7 @@ lines(cbind(x[[3L]]$Lon, x[[3L]]$Lat), col = "dodgerblue")
 x[[1L]]
 ```
 
-Again, performance is comparable with the example shown in Bindoff et al. Accuracy and precision are similar to other published methods where data are not as compromised by noise from shading of the sensor.
+Again, performance is comparable with the analysis of tag 86372 and 86373. Accuracy and precision are similar to other published methods where data are not as compromised by noise from shading of the sensor.
 
 ### Tag 86374
 
@@ -549,13 +572,13 @@ acc_prec(rbind(x1[[2L]], x2[[2L]]), rbind(x1[[3L]], x2[[3L]]), gdat)
 
 #### PSA for tag 78524
 
-The behaviour of the animal from which tag 78524 was retrieved was markedly different from the animal in the methods paper (Bindoff et al. 2017). This raises the question of how much improvement in location estimation might be gained from different movement and shading parameters. Results are reported below.
+The behaviour of the animal from which tag 78524 was retrieved was markedly different from the animal who wore tag 86372. This raises the question of how much improvement in location estimation might be gained from different movement and shading parameters. Results are reported below.
 
 
 ```{r psa_out, eval = F}
-params <- list(c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
-               c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
-               c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
+params <- list(c(1/5, 1/2), c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
+               c(1/5, 1/4), c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
+               c(1/5, 1/8), c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
 x <- lapply(params, function(p)
             psa(d.lig_psa,
                 params = p,
@@ -574,7 +597,21 @@ save(k, file = "psa_78524.RData")
 ```{r}
 load("psa_78524.RData")
 
-print(t(k))
+
+k <- as.data.frame(t(k), row.names = F)
+params <- list(c(1/5, 1/2), c(1/10, 1/2), c(1/25, 1/2), c(1/50, 1/2), 
+               c(1/5, 1/4), c(1/10, 1/4), c(1/25, 1/4), c(1/50, 1/4), 
+               c(1/5, 1/8), c(1/10, 1/8), c(1/25, 1/8), c(1/50, 1/8))
+
+for(i in 1:nrow(k)){
+  k$shading[i] <- round(params[[i]][1],2)
+  k$movement[i] <- round(params[[i]][2],4)
+}
+
+k[,3] <- round(as.numeric(k[,3]), 1)
+k[,4] <- round(as.numeric(k[,4]), 1)
+
+kable(k)
 
 ```
 
