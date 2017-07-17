@@ -248,3 +248,5 @@ burrow1 <- burrow2 <- c(70.75, -49.25)  #from med.lon, med.lat on start and end 
 
 k <- lapply(params, foo)
 
+
+
