@@ -2,3 +2,11 @@
 .Rhistory
 .RData
 .Ruserdata
+<<<<<<< HEAD
+=======
+gps*
+tdr86373.csv
+tdr86374.csv
+tdr78524.csv
+psa_tables.*
+>>>>>>> c729b0e359ce7defee488c95293115b930475f66

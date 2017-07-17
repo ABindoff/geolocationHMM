@@ -2,7 +2,7 @@
 title: "Example of Twilight Free Method - southern elephant seal dataset"
 author: "Aidan Bindoff"
 date: "26 June 2016"
-output: html_document
+output: github_document
 ---
 
 This is a worked example of the *twilight free algorithm* described in Chapter 2 of my Honours thesis and a paper that has been submitted describing the method in detail. Data are from a southern elephant seal that was double-tagged with a time-depth recorder that also recorded ambient light and sea surface temperature (SST), and a GPS tag. The tags were deployed and retrieved at Isles Kerguelen.

@@ -2,7 +2,7 @@
 title: "twilightfree_quick_start_guide"
 author: "Bindoff, A."
 date: "5 June 2017"
-output: html_document
+output: github_document
 ---
 
 ```{r setup, include=FALSE}
