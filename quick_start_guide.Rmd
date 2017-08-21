@@ -174,9 +174,13 @@ You can check your grid by calling `plot(grid)`
 
 
 ```{r grid}
+
+library(polyclip)
 # make a grid with a land/sea mask for the model
-make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask = "sea") {
-  data("wrld_simpl")
+make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask = "sea", pacific = FALSE) {
+  data(wrld_simpl) 
+  if(pacific){
+    wrld_simpl <- nowrapRecenter(wrld_simpl, avoidGEOS = TRUE)}
   nrows <- abs(lat[2L] - lat[1L]) / cell.size
   ncols <- abs(lon[2L] - lon[1L]) / cell.size
   grid <- raster(
@@ -201,7 +205,8 @@ make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask 
   return(grid)
 }
 
-grid <- make.grid(c(45, 115), c(-65, -35), cell.size = 1, mask = "sea")
+
+grid <- make.grid(c(0, 360), c(-65, 65), cell.size = 1, mask = "sea", pacific = T)
 plot(grid)
 ```
 
