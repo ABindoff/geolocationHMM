@@ -13,3 +13,13 @@ Some important files,
 [quick_start_guide.md](https://github.com/ABindoff/geolocationHMM/blob/master/quick_start_guide.md) provides a quick-start tutorial for users who want to use the (very small) set of functions to analyse their own light data from archival tags. *A tutorial will be added for users who wish to improve their location estimates by including SST data*
 
 [parameter_sensitivity_new_data.md](https://github.com/ABindoff/geolocationHMM/blob/master/parameter_sensitivity_new_data.md) extensively tests the sensitivity of the shading/noise and movement parameters using data from a single animal, then uses the optimal parameters from that example on three more datasets, finally performing another PSA on an animal displaying markedly different behaviours to the first. *This analysis is useful because it is expected that users supply shading/noise and movement parameters from previous studies, preferably from double-tagging experiment. The analysis demonstrates that parameters determined from a double-tagging experiment can inform analyses of other tag data from the same species, but that optimal parameters are not necessary for useful results in biology and ecology.*
+
+
+Known bug:
+
+- where the `grid` (spatial map) crosses the equator it is possible for the MAP estimate to occur (somewhat obviously) on the wrong side of the equator on any given day (the algorithm picks a mathematically plausible but ecologically implausible solution). One quick fix is to break the data into parts and provide a different `grid` for each part. Alternatively, calling `essieRaster(fit_object)` and finding the max in the appropriate hemisphere also works. A solution is currently in development and testing.  
+
+  
+  [![DOI](https://zenodo.org/badge/61974427.svg)](https://zenodo.org/badge/latestdoi/61974427)
+
+
