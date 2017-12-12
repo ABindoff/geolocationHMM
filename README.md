@@ -4,9 +4,17 @@ A new method of geolocation from noisy light data using a hidden Markov model
 
 For my Honours project I developed a new method of light-based geolocation that relies on the overall pattern of day and night rather than an explicit dependence on twilights as per the threshold, curve, or template-fit methods. For an introduction to geolocation
 using recorded light, please see https://en.wikipedia.org/wiki/Light_level_geolocator<br><br>
-This repository holds important data for my thesis and a paper which is to be submitted detailing the 'twilight free' method.<br>
+This repository holds important data for my thesis and a paper which has been accepted detailing the 'twilight free' method.<br>
+  
+## Important Update:
 
-Some important files, 
+This git is important as it provides a data archive including supplementary material for the published article. However, `TwilightFree` has been packaged for R and is available (with tutorials) from https://github.com/ABindoff/TwilightFree  
+
+  
+    
+    
+
+### Supplementary materials 
 
 [twilight_free_algorith_example_ses.Rmd](https://github.com/ABindoff/geolocationHMM/blob/master/twilight%20free%20algorithm%20example%20ses.Rmd)  contains a script that replicates an example from the methods paper and calculates measures of accuracy and precision. 
 
