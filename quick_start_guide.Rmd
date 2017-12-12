@@ -1,7 +1,7 @@
 ---
 title: "twilightfree_quick_start_guide"
 author: "Bindoff, A."
-date: "5 June 2017"
+date: "11 December 2017"
 output: github_document
 ---
 
@@ -21,8 +21,6 @@ First we need to load some R packages. The SGAT package (https://github.com/SWot
 # devtools::install_github("SWotherspoon/BAStag")  
 library(SGAT)
 library(BAStag)
-library(raster)
-library(maptools)
 library(readr)
 ```
 
@@ -31,8 +29,8 @@ This function constructs and returns a model which we will fit later using a for
 
 `df` is a data.frame of light and date-time observations (at a minimum). It may also contain sea surface temperature observations and other data which will be ignored. The important thing is that it has a column named `Light` and another column named `Date`.  
 The rows of the Light column are the light observations. There are very few restrictions on this but some tags store observations on a log scale and may need to be rescaled in order to determine a good threshold (more on this later). The rows of the Date column are the date and time data that tell us precisely when the observation occurred. It is crucial that these are in GMT or UTC time, and they need to be in POSIXct "%Y-%m-%d %H:%M:%S" format, which means a four digit year, two digit month and two digit day separated with a dash `-`, followed by hours, minutes, seconds separated with a colon `:`.  
-`alpha` are the hyper-parameters describing the assumed distribution of daily movements. For flexibility these are the shape and scale parameters of a Gamma distribution, and in practice the shape parameter works best set to 1.
-`beta` are the hyper-parameters describing the assumed distribution of shading on the sensor at or around twilight. Again, for flexibility these are the shape and scale parameters of a Gamma distribution, and in practice a shape parameter of 1 works best.
+`beta` are the hyper-parameters describing the assumed distribution of daily movements. For flexibility these are the shape and scale parameters of a Gamma distribution, and in practice the shape parameter works best set to 1.
+`alpha` are the hyper-parameters describing the assumed distribution of shading on the sensor at or around twilight. Again, for flexibility these are the shape and scale parameters of a Gamma distribution, and in practice a shape parameter of 1 works best.
 `alpha` and `beta` must be chosen using prior knowledge. Although the method isn't wildly sensitive to these parameters, accuracy and precision are worthy goals. Double-tag data can be very helpful here, for example putting at least one ARGOS tag on an animal in your study. As the method is new, a database of previous tracks does not yet exist. If you have data from a double-tag study and have found optimal hyper-parameters, email the authors with the species, time of year and duration of the study, the alpha and beta hyper-parameters, and the type of satellite tag and light tag and we will add these to a database to help our community.  
 `zenith` refers to the solar zenith angle assumed to represent twilight. This is typically 95-97 degrees.  
 `threshold` refers to the ambient light level when twilight occurs. More on choosing this below.  
@@ -40,129 +38,10 @@ The rows of the Light column are the light observations. There are very few rest
 `retrieved.at` is the location at which the tag was retrieved, c(lon, lat)  
 If either of these are unknown, simply exclude those parameters and the model will estimate them from the data.
 
-```{r twilight_free_model}
-#  core algorithm of the twilight free method of Bindoff et al.
-TwilightFree <- function(df,
-                         alpha = c(1, 1/10),
-                         beta = c(1, 1/4),
-                         dt = NULL,
-                         threshold = 5,
-                         zenith = 96,
-                         deployed.at = F,  # c(lon, lat)
-                         retrieved.at = F){# c(lon, lat))) 
-  # Define segment by date
-  seg <- floor((as.numeric(df$Date)- as.numeric(min(df$Date)))/(24*60*60))
-  # Split into `slices`
-  slices <- split(df,seg)
-  slices <- slices[-c(1,length(slices))]
-  
-  
-  # fixed locations
-  x0 <- matrix(0, length(slices), 2)
-  x0[1,] <- deployed.at
-  x0[length(slices),] <- retrieved.at
-  fixed <- rep_len(c(as.logical(deployed.at[1L]),
-                     logical(length(slices)-2),
-                     as.logical(retrieved.at[1L])),
-                     length.out = length(slices))
-  
-  time <- .POSIXct(sapply(slices,
-                            function(d) mean(d$Date)), "GMT")
-  
-  ## Times (hours) between observations
-  if (is.null(dt))
-    dt <- diff(as.numeric(time) / 3600)
-  
-  
-  ## Contribution to log posterior from each x location
-  logpk <- function(k, x) {
-    n <- nrow(x)
-    logl <- double(n)
-    
-    ss <- solar(slices[[k]]$Date)
-    obsDay <- (slices[[k]]$Light) >= threshold
-    
-    ## Loop over location
-    for (i in seq_len(n)) {
-      ## Compute for each x the time series of zeniths
-      expDay <- zenith(ss, x[i, 1], x[i, 2]) <= zenith
-      
-      ## Some comparison to the observed light -> is L=0 (ie logl=-Inf)
-      if (any(obsDay & !expDay)) {
-        logl[i] <- -Inf
-      } else {
-        count <- sum(expDay & !obsDay)
-        logl[i] <- dgamma(count, alpha[1], alpha[2], log = TRUE)
-      }
-    }
-    ## Return sum of likelihood + prior
-    logl + logp0(k, x, slices)
-  }
-  
-  ## Behavioural contribution to the log posterior
-  logbk <- function(k, x1, x2) {
-    spd <- pmax.int(gcDist(x1, x2), 1e-06) / dt[k]
-    dgamma(spd, beta[1L], beta[2L], log = TRUE)
-  }
-  
-  list(
-    logpk = logpk,
-    logbk = logbk,
-    fixed = fixed,
-    x0 = x0,
-    time = time,
-    alpha = alpha,
-    beta = beta
-  )
-}
-
-
-logp0 <- function(k, x, slices) {
-  x[, 1] <- x[, 1] %% 360
-  tt <- median(slices[[k]]$Temp, na.rm = TRUE)
-  if (is.na(tt)) {
-    0
-  } else {
-    dnorm(tt, extract(sst[[indices[k]]], x), 2, log = T)
-  }
-}
-```
-
 
 Before a tag is deployed, it is good practice to collect data for a few days at a fixed location within a few degrees of latitude of where the tag will be deployed. The clock on the tag should be set precisely using UTC/GMT time first, and a GPS used to determine the fixed calibration location.  
 `calibrate` takes the (Light, Date) dataframe, a single day from the calibration period, the longitude and latitude the tag was calibrated at, and a guess at the solar zenith angle. From this is returns a plot of the light data trace over that day (in red), and the theoretical light (in black). These should correspond for the night period. `calibrate` returns a threshold, which is the maximum light observed during the night period. You should use calibrate for each day of calibration and choose the maximum threshold returned. You may need to change `zenith` to adjust the window of night so that this value makes sense.
 
-
-```{r threshold_using_calibrate}
-# find a threshold using calibration position and date
-calibrate <- function(df, day, lon, lat, zenith = 96, offset = 0, verbose = T){
-  day <- day + offset*60*60  # `day` is a POSIXct date-time object usually in GMT so an `offset` parameter is provided 
-                             # to quickly shift the data so that the night isn't cut off 
-  single.day <- subset(df, df$Date >= as.POSIXct(day, tz = "GMT") & df$Date < as.POSIXct(day+24*60*60, tz = "GMT"))
-  
-  d.sim <- zenithSimulate(single.day$Date,
-                          lon = rep(lon, length(single.day$Date)),
-                          lat = rep(lat, length(single.day$Date)),
-                          single.day$Date)
-  d.sim$Light <- ifelse(d.sim$Zenith < zenith, max(single.day$Light, na.rm = T), 1)
-  thresh <- max(single.day$Light[which(d.sim$Zenith >= zenith)])
-  
-  if(verbose){
-    plot(single.day$Date,
-         single.day$Light,
-         col = "red",type = "l",
-         lwd = 2,
-         ylim = c(0,max(single.day$Light, na.rm = T)),
-         xlab = day, main = cbind(lon, lat))
-    lines(d.sim$Date, d.sim$Light, lwd = 2)
-    abline(h = thresh, lty = 2)
-    print(paste0("max light in night window: ", thresh, " assuming a solar zenith angle of: ", zenith))
-  }
-  
-  return(thresh)
-  
-}
-```
 
 
 TwilightFree produces the track using a grid of locations representing all the places on earth the animal is likely to have visited. You need to provide a grid to the model even if you think the animal could have gone anywhere on earth. 
@@ -173,40 +52,8 @@ You can check your grid by calling `plot(grid)`
 
 
 
-```{r grid}
-
-library(polyclip)
-# make a grid with a land/sea mask for the model
-make.grid <- function(lon = c(-180, 180), lat = c(-90, 90), cell.size = 1, mask = "sea", pacific = FALSE) {
-  data(wrld_simpl) 
-  if(pacific){
-    wrld_simpl <- nowrapRecenter(wrld_simpl, avoidGEOS = TRUE)}
-  nrows <- abs(lat[2L] - lat[1L]) / cell.size
-  ncols <- abs(lon[2L] - lon[1L]) / cell.size
-  grid <- raster(
-    nrows = nrows,
-    ncols = ncols,
-    xmn = min(lon),
-    xmx = max(lon),
-    ymn = min(lat),
-    ymx = max(lat),
-    crs = proj4string(wrld_simpl)
-  )
-    grid <- rasterize(wrld_simpl, grid, 1, silent = TRUE)
-    grid <- is.na(grid)
-    switch(mask,
-           sea = {},
-           land = {
-                  grid <- subs(grid, data.frame(c(0,1), c(1,0)))},
-           none = {
-                  grid <- subs(grid, data.frame(c(0,1), c(1,1)))
-           }
-    )
-  return(grid)
-}
-
-
-grid <- make.grid(c(0, 360), c(-65, 65), cell.size = 1, mask = "sea", pacific = T)
+```{r}
+grid <- makeGrid(c(45, 115), c(-65, -35), cell.size = 1, mask = "sea", pacific = T)  # Kerguelen
 plot(grid)
 ```
 
@@ -223,7 +70,6 @@ tag <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/TDR8637
 d.lig <- read_delim(tag, delim = ",", skip = 0, 
                     col_names = c("Date", "Light","Depth","Temp"))
 d.lig$Temp <- NA
-# d.lig$Date <- as.POSIXct(d.lig$Date, tz = "UTC", format = "%d/%m/%y %H:%M:%S")
 
 d.lig <- subset(d.lig,Date >= as.POSIXct("2009-10-28 00:00:01",tz = "UTC") &
                   Date < as.POSIXct("2010-01-20 15:00:01",tz = "UTC")) 
@@ -282,30 +128,11 @@ Let's have a look at the track - but first we need a function to turn the fitted
 `trip` takes the fitted object and returns a data frame with Date, Lon, Lat.  
 `drawTracks` takes the object returned from `trip` and plots it on a sensibly defined map.
 
-```{r trip}
-# return a track from an essie fit
-trip <- function(fit){
-  trip <- data.frame(as.POSIXct(strptime(essieMode(fit)$time, "%Y-%m-%d")), essieMode(fit)$x)
-  names(trip) <- c("Date", "Lon", "Lat")
-  return(trip)
-}
-
-colfunc<-colorRampPalette(c("red","springgreen","royalblue"))
-
-# plot track function
-drawTracks <- function(trip, col = "firebrick", main = ""){
-  xlm <- range(trip$Lon)
-  ylm <- range(trip$Lat)
-  
-  data(wrld_simpl)
-  plot(wrld_simpl,xlim=xlm,ylim=ylm,
-       col="grey90",border="grey80", main = main, axes = T)
-  
-  points(cbind(jitter(trip$Lon), jitter(trip$Lat)), col = colfunc(nrow(trip)))
-  lines(cbind(trip$Lon, trip$Lat), col = col)
-
-}
-
-
-drawTracks(trip(fit))
+```{r}
+#  filtered GPS positions
+gps <- "https://raw.githubusercontent.com/ABindoff/geolocationHMM/master/86372_filteredGPS.csv"
+gdat <- read_csv(gps, skip = 0, 
+                   col_names = c("Date", "Lon","Lat"))
+head(gdat)
+drawTracks(trip(fit, type = "full"), gps = gdat, pacific = TRUE)
 ```
