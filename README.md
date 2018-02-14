@@ -6,7 +6,7 @@ For my Honours project I developed a new method of light-based geolocation that 
 using recorded light, please see https://en.wikipedia.org/wiki/Light_level_geolocator<br><br>
 This repository holds important data for my thesis and a paper which has been accepted detailing the 'twilight free' method.<br>
   
-## Important Update:
+## Important Update: TwilightFree R package now available
 
 This git is important as it provides a data archive including supplementary material for the published article. However, `TwilightFree` has been packaged for R and is available (with tutorials) from https://github.com/ABindoff/TwilightFree  
 

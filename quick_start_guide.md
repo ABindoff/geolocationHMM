@@ -3,6 +3,10 @@ twilightfree\_quick\_start\_guide
 Bindoff, A.
 5 June 2017
 
+# Update 2018
+
+This git remains only as a data repository now and the quick start guide (below) is out of date. Instead, please visit https://github.com/ABindoff/TwilightFree and install the `TwilightFree` package using the instructions on that page.  
+
 Quick-start guide to geolocation using the TwilightFree method
 --------------------------------------------------------------
 
